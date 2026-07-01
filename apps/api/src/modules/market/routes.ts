@@ -1,57 +1,130 @@
 import { Elysia, t } from "elysia";
+import { redisPublisher, redisSubscriber } from "../../realtime/redis";
+import { createBid, getListingFeed } from "./service";
 
-const SERVER = "Zero";
+const MARKET_CHANNEL = "market:events";
+const wsClients = new Set<any>();
+let subscriberBootstrapped = false;
 
-const listings = [
-  {
-    id: "LST-1001",
-    itemName: "Shard +8",
-    itemType: "weapon",
-    serverName: SERVER,
-    camp: 1,
-    listingType: "auction",
-    currentBidGb: 850,
-    endAt: new Date(Date.now() + 1000 * 60 * 12).toISOString()
+async function publishMarketEvent(event: Record<string, unknown>): Promise<void> {
+  await redisPublisher.publish(MARKET_CHANNEL, JSON.stringify(event));
+}
+
+async function ensureSubscriber(): Promise<void> {
+  if (subscriberBootstrapped) {
+    return;
   }
-];
+
+  await redisSubscriber.subscribe(MARKET_CHANNEL);
+  redisSubscriber.on("message", (channel, message) => {
+    if (channel !== MARKET_CHANNEL) {
+      return;
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(message);
+    } catch {
+      payload = { kind: "market.raw", payload: message };
+    }
+
+    for (const client of wsClients) {
+      client.send(payload);
+    }
+  });
+
+  subscriberBootstrapped = true;
+}
 
 export const marketRoutes = new Elysia({ prefix: "/market" })
   .get(
     "/listings",
-    ({ query }) => {
-      const filtered = listings.filter((listing) => {
-        if (query.camp && Number(query.camp) !== listing.camp) {
-          return false;
-        }
-        if (query.listingType && query.listingType !== listing.listingType) {
-          return false;
-        }
-        return true;
+    async ({ query }) => {
+      const result = await getListingFeed({
+        camp: query.camp,
+        listingType: query.listingType,
+        serverName: query.serverName,
+        itemType: query.itemType,
+        status: query.status,
+        cursor: query.cursor,
+        limit: query.limit
       });
 
       return {
-        items: filtered,
-        nextCursor: null
+        items: result.items,
+        nextCursor: result.nextCursor
       };
     },
     {
       query: t.Object({
-        camp: t.Optional(t.Union([t.Literal("1"), t.Literal("2"), t.Literal("3"), t.Literal("4"), t.Literal("5")])),
-        listingType: t.Optional(t.Union([t.Literal("auction"), t.Literal("buy_now")]))
+        camp: t.Optional(t.Numeric({ minimum: 1, maximum: 5 })),
+        listingType: t.Optional(t.Union([t.Literal("auction"), t.Literal("buy_now")])),
+        serverName: t.Optional(t.String({ minLength: 1, maxLength: 50 })),
+        itemType: t.Optional(t.String({ minLength: 1, maxLength: 50 })),
+        status: t.Optional(t.Union([t.Literal("active"), t.Literal("sold"), t.Literal("passive"), t.Literal("expired")])),
+        cursor: t.Optional(t.String({ minLength: 8 })),
+        limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 }))
+      })
+    }
+  )
+  .post(
+    "/listings/:listingId/bids",
+    async ({ params, body, status }) => {
+      try {
+        const bid = await createBid({
+          listingId: params.listingId,
+          bidderUserId: body.bidderUserId,
+          amountGb: body.amountGb
+        });
+
+        const event = {
+          kind: "bid.created",
+          payload: {
+            listingId: bid.listingId,
+            bidId: bid.bidId,
+            amountGb: bid.amountGb,
+            bidderUserId: bid.bidderUserId,
+            createdAt: new Date().toISOString()
+          }
+        };
+
+        await publishMarketEvent(event);
+
+        return {
+          ok: true,
+          bid
+        };
+      } catch (error) {
+        return status(400, { error: (error as Error).message });
+      }
+    },
+    {
+      params: t.Object({
+        listingId: t.String({ minLength: 10 })
+      }),
+      body: t.Object({
+        bidderUserId: t.String({ minLength: 10 }),
+        amountGb: t.Numeric({ minimum: 1 })
       })
     }
   )
   .ws("/feed", {
-    message(ws, message) {
-      ws.send({
-        kind: "market_event",
+    async message(_ws, message) {
+      const event = {
+        kind: "market.client_event",
         payload: message
-      });
+      };
+      await publishMarketEvent(event);
     },
-    open(ws) {
+    async open(ws) {
+      await ensureSubscriber();
+      wsClients.add(ws);
       ws.send({
         kind: "welcome",
         payload: "Realtime pazar feed baglantisi aktif"
       });
+    },
+    close(ws) {
+      wsClients.delete(ws);
     }
   });

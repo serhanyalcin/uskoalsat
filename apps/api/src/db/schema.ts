@@ -34,7 +34,19 @@ export const listings = pgTable("listings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
   statusIdx: index("listings_status_idx").on(table.status),
-  serverIdx: index("listings_server_idx").on(table.serverName)
+  serverIdx: index("listings_server_idx").on(table.serverName),
+  feedIdx: index("listings_feed_idx").on(table.status, table.createdAt, table.id)
+}));
+
+export const bids = pgTable("bids", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  listingId: uuid("listing_id").notNull().references(() => listings.id, { onDelete: "cascade" }),
+  bidderUserId: uuid("bidder_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  amountGb: integer("amount_gb").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  listingIdx: index("bids_listing_idx").on(table.listingId, table.createdAt),
+  bidderIdx: index("bids_bidder_idx").on(table.bidderUserId)
 }));
 
 export const authSessions = pgTable("auth_sessions", {

@@ -1,0 +1,2 @@
+-- Reserved for bootstrap SQL if needed.
+-- Drizzle migrations will manage schema changes.

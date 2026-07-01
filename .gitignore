@@ -111,3 +111,17 @@ dist
 
 # TernJS port file
 .tern-port
+
+# Project-specific env files
+.env.local
+.env.production
+
+# Bun lockfile
+bun.lockb
+
+# Workspace build outputs
+apps/*/dist
+packages/*/dist
+
+# Local upload evidence storage
+storage/

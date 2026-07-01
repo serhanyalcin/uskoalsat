@@ -97,7 +97,14 @@ export async function getListingFeed(query: ListingFeedQuery): Promise<{ items: 
   };
 }
 
-export async function createBid(input: { listingId: string; bidderUserId: string; amountGb: number }): Promise<{ listingId: string; amountGb: number; bidId: string; bidderUserId: string }> {
+export async function createBid(input: { listingId: string; bidderUserId: string; amountGb: number }): Promise<{
+  listingId: string;
+  amountGb: number;
+  bidId: string;
+  bidderUserId: string;
+  minRequiredBidGb: number;
+  extendedTo?: string;
+}> {
   return db.transaction(async (tx) => {
     const [listing] = await tx.select().from(listings).where(eq(listings.id, input.listingId)).limit(1);
 
@@ -113,9 +120,31 @@ export async function createBid(input: { listingId: string; bidderUserId: string
       throw new Error("Sadece acik artirmaya teklif verilebilir");
     }
 
+    if (!listing.endAt) {
+      throw new Error("Acik artirma bitis suresi tanimli degil");
+    }
+
+    if (listing.endAt <= new Date()) {
+      throw new Error("Acik artirma suresi dolmus");
+    }
+
+    const [lastBid] = await tx
+      .select()
+      .from(bids)
+      .where(eq(bids.listingId, input.listingId))
+      .orderBy(desc(bids.createdAt), desc(bids.id))
+      .limit(1);
+
+    if (lastBid && lastBid.bidderUserId === input.bidderUserId) {
+      throw new Error("Ayni kullanici ust uste teklif veremez");
+    }
+
     const currentBid = listing.currentBidGb ?? 0;
-    if (input.amountGb <= currentBid) {
-      throw new Error("Teklif mevcut tekliften buyuk olmali");
+    const minIncrement = Math.max(1, Math.ceil(currentBid * 0.01));
+    const minRequiredBidGb = currentBid + minIncrement;
+
+    if (input.amountGb < minRequiredBidGb) {
+      throw new Error(`Minimum teklif ${minRequiredBidGb} GB olmali`);
     }
 
     const [bid] = await tx
@@ -127,10 +156,19 @@ export async function createBid(input: { listingId: string; bidderUserId: string
       })
       .returning();
 
+    const now = new Date();
+    const remainingMs = listing.endAt.getTime() - now.getTime();
+    let antiSnipeExtendedTo: Date | undefined;
+
+    if (remainingMs <= 10_000) {
+      antiSnipeExtendedTo = new Date(listing.endAt.getTime() + 30_000);
+    }
+
     await tx
       .update(listings)
       .set({
         currentBidGb: input.amountGb,
+        endAt: antiSnipeExtendedTo ?? listing.endAt,
         updatedAt: new Date()
       })
       .where(eq(listings.id, input.listingId));
@@ -139,7 +177,9 @@ export async function createBid(input: { listingId: string; bidderUserId: string
       listingId: input.listingId,
       amountGb: input.amountGb,
       bidId: bid.id,
-      bidderUserId: input.bidderUserId
+      bidderUserId: input.bidderUserId,
+      minRequiredBidGb,
+      extendedTo: antiSnipeExtendedTo?.toISOString()
     };
   });
 }

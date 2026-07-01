@@ -84,6 +84,8 @@ export const marketRoutes = new Elysia({ prefix: "/market" })
             bidId: bid.bidId,
             amountGb: bid.amountGb,
             bidderUserId: bid.bidderUserId,
+            minRequiredBidGb: bid.minRequiredBidGb,
+            antiSnipeExtendedTo: bid.extendedTo ?? null,
             createdAt: new Date().toISOString()
           }
         };

@@ -3,6 +3,8 @@ import { boolean, index, integer, pgEnum, pgTable, text, timestamp, uuid, varcha
 export const userRoleEnum = pgEnum("user_role", ["user", "merchant", "admin"]);
 export const listingTypeEnum = pgEnum("listing_type", ["auction", "buy_now"]);
 export const listingStatusEnum = pgEnum("listing_status", ["active", "sold", "passive", "expired"]);
+export const tradeStatusEnum = pgEnum("trade_status", ["pending", "in_progress", "completed", "disputed", "cancelled"]);
+export const tradeReasonEnum = pgEnum("trade_reason", ["auction_end", "buy_now"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -47,6 +49,27 @@ export const bids = pgTable("bids", {
 }, (table) => ({
   listingIdx: index("bids_listing_idx").on(table.listingId, table.createdAt),
   bidderIdx: index("bids_bidder_idx").on(table.bidderUserId)
+}));
+
+export const trades = pgTable("trades", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  listingId: uuid("listing_id").notNull().unique().references(() => listings.id, { onDelete: "cascade" }),
+  sellerUserId: uuid("seller_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  buyerUserId: uuid("buyer_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  winningBidId: uuid("winning_bid_id").references(() => bids.id, { onDelete: "set null" }),
+  tradeCode: varchar("trade_code", { length: 24 }).notNull().unique(),
+  reason: tradeReasonEnum("reason").notNull(),
+  status: tradeStatusEnum("status").notNull().default("pending"),
+  serverName: varchar("server_name", { length: 50 }).notNull(),
+  camp: integer("camp").notNull(),
+  buyerGameNick: varchar("buyer_game_nick", { length: 24 }).notNull(),
+  sellerGameNick: varchar("seller_game_nick", { length: 24 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  codeIdx: index("trades_code_idx").on(table.tradeCode),
+  buyerIdx: index("trades_buyer_idx").on(table.buyerUserId),
+  sellerIdx: index("trades_seller_idx").on(table.sellerUserId)
 }));
 
 export const authSessions = pgTable("auth_sessions", {

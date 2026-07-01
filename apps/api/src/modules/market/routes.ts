@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { redisPublisher, redisSubscriber } from "../../realtime/redis";
+import { createTradeMatch } from "../trade/service";
 import { bulkCreateListings, bulkUpdateListingStatus, getMerchantListings } from "./merchant-service";
 import { createBid, getListingFeed } from "./service";
 
@@ -108,6 +109,48 @@ export const marketRoutes = new Elysia({ prefix: "/market" })
       body: t.Object({
         bidderUserId: t.String({ minLength: 10 }),
         amountGb: t.Numeric({ minimum: 1 })
+      })
+    }
+  )
+  .post(
+    "/listings/:listingId/buy-now",
+    async ({ params, body, request, status }) => {
+      try {
+        const trade = await createTradeMatch({
+          listingId: params.listingId,
+          buyerUserId: body.buyerUserId,
+          reason: "buy_now",
+          buyerGameNick: body.buyerGameNick,
+          sellerGameNick: body.sellerGameNick,
+          ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined
+        });
+
+        await publishMarketEvent({
+          kind: "listing.buy_now.matched",
+          payload: {
+            listingId: params.listingId,
+            tradeCode: trade.tradeCode,
+            buyerUserId: trade.buyerUserId,
+            sellerUserId: trade.sellerUserId
+          }
+        });
+
+        return {
+          ok: true,
+          trade
+        };
+      } catch (error) {
+        return status(400, { error: (error as Error).message });
+      }
+    },
+    {
+      params: t.Object({
+        listingId: t.String({ minLength: 10 })
+      }),
+      body: t.Object({
+        buyerUserId: t.String({ minLength: 10 }),
+        buyerGameNick: t.String({ minLength: 2, maxLength: 24 }),
+        sellerGameNick: t.String({ minLength: 2, maxLength: 24 })
       })
     }
   )

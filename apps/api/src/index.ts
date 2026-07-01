@@ -7,6 +7,7 @@ import { env } from "./config/env";
 import { authRoutes } from "./modules/auth/routes";
 import { healthRoutes } from "./modules/health/routes";
 import { marketRoutes } from "./modules/market/routes";
+import { tradeRoutes } from "./modules/trade/routes";
 
 await mkdir(env.UPLOAD_DIR, { recursive: true });
 
@@ -28,6 +29,7 @@ const app = new Elysia()
   .use(healthRoutes)
   .use(authRoutes)
   .use(marketRoutes)
+  .use(tradeRoutes)
   .listen(env.API_PORT);
 
 console.log(`API listening on http://localhost:${env.API_PORT}`);

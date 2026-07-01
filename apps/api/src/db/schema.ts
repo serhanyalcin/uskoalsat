@@ -5,6 +5,7 @@ export const listingTypeEnum = pgEnum("listing_type", ["auction", "buy_now"]);
 export const listingStatusEnum = pgEnum("listing_status", ["active", "sold", "passive", "expired"]);
 export const tradeStatusEnum = pgEnum("trade_status", ["pending", "in_progress", "completed", "disputed", "cancelled"]);
 export const tradeReasonEnum = pgEnum("trade_reason", ["auction_end", "buy_now"]);
+export const disputeStatusEnum = pgEnum("dispute_status", ["open", "resolved", "rejected"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -70,6 +71,35 @@ export const trades = pgTable("trades", {
   codeIdx: index("trades_code_idx").on(table.tradeCode),
   buyerIdx: index("trades_buyer_idx").on(table.buyerUserId),
   sellerIdx: index("trades_seller_idx").on(table.sellerUserId)
+}));
+
+export const disputes = pgTable("disputes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tradeId: uuid("trade_id").notNull().references(() => trades.id, { onDelete: "cascade" }),
+  reporterUserId: uuid("reporter_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  reportedUserId: uuid("reported_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  evidencePath: text("evidence_path").notNull(),
+  reason: text("reason").notNull(),
+  status: disputeStatusEnum("status").notNull().default("open"),
+  adminDecision: text("admin_decision"),
+  resolvedByAdminId: uuid("resolved_by_admin_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true })
+}, (table) => ({
+  tradeIdx: index("disputes_trade_idx").on(table.tradeId),
+  statusIdx: index("disputes_status_idx").on(table.status)
+}));
+
+export const strikes = pgTable("strikes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  disputeId: uuid("dispute_id").references(() => disputes.id, { onDelete: "set null" }),
+  reason: text("reason").notNull(),
+  createdByAdminId: uuid("created_by_admin_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  userIdx: index("strikes_user_idx").on(table.userId),
+  disputeIdx: index("strikes_dispute_idx").on(table.disputeId)
 }));
 
 export const authSessions = pgTable("auth_sessions", {

@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { redisPublisher, redisSubscriber } from "../../realtime/redis";
+import { bulkCreateListings, bulkUpdateListingStatus, getMerchantListings } from "./merchant-service";
 import { createBid, getListingFeed } from "./service";
 
 const MARKET_CHANNEL = "market:events";
@@ -107,6 +108,87 @@ export const marketRoutes = new Elysia({ prefix: "/market" })
       body: t.Object({
         bidderUserId: t.String({ minLength: 10 }),
         amountGb: t.Numeric({ minimum: 1 })
+      })
+    }
+  )
+  .get(
+    "/merchant/listings",
+    async ({ query }) => {
+      return getMerchantListings({
+        merchantUserId: query.merchantUserId,
+        status: query.status,
+        cursor: query.cursor,
+        limit: query.limit
+      });
+    },
+    {
+      query: t.Object({
+        merchantUserId: t.String({ minLength: 10 }),
+        status: t.Optional(t.Union([t.Literal("active"), t.Literal("sold"), t.Literal("passive"), t.Literal("expired")])),
+        cursor: t.Optional(t.String({ minLength: 8 })),
+        limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 }))
+      })
+    }
+  )
+  .post(
+    "/merchant/listings/bulk-create",
+    async ({ body }) => {
+      const created = await bulkCreateListings(body.merchantUserId, body.items);
+      await publishMarketEvent({
+        kind: "merchant.bulk_created",
+        payload: {
+          merchantUserId: body.merchantUserId,
+          count: created.length,
+          listingIds: created.map((item) => item.id)
+        }
+      });
+      return {
+        ok: true,
+        count: created.length,
+        items: created
+      };
+    },
+    {
+      body: t.Object({
+        merchantUserId: t.String({ minLength: 10 }),
+        items: t.Array(
+          t.Object({
+            itemName: t.String({ minLength: 2, maxLength: 100 }),
+            itemType: t.String({ minLength: 2, maxLength: 50 }),
+            serverName: t.Optional(t.String({ minLength: 1, maxLength: 50 })),
+            camp: t.Numeric({ minimum: 1, maximum: 5 }),
+            listingType: t.Union([t.Literal("auction"), t.Literal("buy_now")]),
+            buyNowGb: t.Optional(t.Numeric({ minimum: 1 })),
+            startBidGb: t.Optional(t.Numeric({ minimum: 1 })),
+            durationMinutes: t.Optional(t.Numeric({ minimum: 1, maximum: 1440 }))
+          })
+        )
+      })
+    }
+  )
+  .post(
+    "/merchant/listings/bulk-status",
+    async ({ body }) => {
+      const updated = await bulkUpdateListingStatus(body.merchantUserId, body.listingIds, body.nextStatus);
+      await publishMarketEvent({
+        kind: "merchant.bulk_status_updated",
+        payload: {
+          merchantUserId: body.merchantUserId,
+          listingIds: body.listingIds,
+          nextStatus: body.nextStatus,
+          updated
+        }
+      });
+      return {
+        ok: true,
+        updated
+      };
+    },
+    {
+      body: t.Object({
+        merchantUserId: t.String({ minLength: 10 }),
+        listingIds: t.Array(t.String({ minLength: 10 }), { minItems: 1, maxItems: 200 }),
+        nextStatus: t.Union([t.Literal("active"), t.Literal("sold"), t.Literal("passive")])
       })
     }
   )

@@ -1,5 +1,7 @@
 import { Elysia, t } from "elysia";
 import { redisPublisher, redisSubscriber } from "../../realtime/redis";
+import { createNotification } from "../notification/service";
+import { recordPriceHistoryEvent } from "../price/service";
 import { createTradeMatch } from "../trade/service";
 import { bulkCreateListings, bulkUpdateListingStatus, getMerchantListings } from "./merchant-service";
 import { createBid, getListingFeed } from "./service";
@@ -92,6 +94,42 @@ export const marketRoutes = new Elysia({ prefix: "/market" })
           }
         };
 
+        await recordPriceHistoryEvent({
+          listingId: bid.listingId,
+          bidId: bid.bidId,
+          itemName: bid.itemName,
+          itemType: bid.itemType,
+          serverName: bid.serverName,
+          camp: bid.camp,
+          eventType: "bid",
+          amountGb: bid.amountGb
+        });
+
+        await createNotification({
+          userId: bid.sellerUserId,
+          kind: "bid_received",
+          title: "Ilanina yeni teklif geldi",
+          body: `${bid.itemName} icin ${bid.amountGb} GB teklif verildi.`,
+          metadata: {
+            listingId: bid.listingId,
+            bidId: bid.bidId,
+            amountGb: bid.amountGb
+          }
+        });
+
+        if (bid.extendedTo) {
+          await createNotification({
+            userId: bid.sellerUserId,
+            kind: "auction_extended",
+            title: "Acik artirma suresi uzatildi",
+            body: `${bid.itemName} ilani son 10 saniyede teklif aldigi icin sure uzatildi.`,
+            metadata: {
+              listingId: bid.listingId,
+              extendedTo: bid.extendedTo
+            }
+          });
+        }
+
         await publishMarketEvent(event);
 
         return {
@@ -116,7 +154,7 @@ export const marketRoutes = new Elysia({ prefix: "/market" })
     "/listings/:listingId/buy-now",
     async ({ params, body, request, status }) => {
       try {
-        const trade = await createTradeMatch({
+        const result = await createTradeMatch({
           listingId: params.listingId,
           buyerUserId: body.buyerUserId,
           reason: "buy_now",
@@ -125,19 +163,52 @@ export const marketRoutes = new Elysia({ prefix: "/market" })
           ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined
         });
 
+        await recordPriceHistoryEvent({
+          listingId: result.trade.listingId,
+          tradeId: result.trade.id,
+          itemName: result.itemName,
+          itemType: result.itemType,
+          serverName: result.trade.serverName,
+          camp: result.trade.camp,
+          eventType: "sale",
+          amountGb: result.settlementAmountGb
+        });
+
+        await createNotification({
+          userId: result.trade.sellerUserId,
+          kind: "trade_matched",
+          title: "Hemen al ile eslesme saglandi",
+          body: `${result.itemName} icin alici bulundu. Islem kodu: ${result.trade.tradeCode}`,
+          metadata: {
+            tradeCode: result.trade.tradeCode,
+            listingId: result.trade.listingId
+          }
+        });
+
+        await createNotification({
+          userId: result.trade.buyerUserId,
+          kind: "trade_matched",
+          title: "Satin alim eslesmesi hazir",
+          body: `${result.itemName} icin trade odasi hazir. Islem kodu: ${result.trade.tradeCode}`,
+          metadata: {
+            tradeCode: result.trade.tradeCode,
+            listingId: result.trade.listingId
+          }
+        });
+
         await publishMarketEvent({
           kind: "listing.buy_now.matched",
           payload: {
             listingId: params.listingId,
-            tradeCode: trade.tradeCode,
-            buyerUserId: trade.buyerUserId,
-            sellerUserId: trade.sellerUserId
+            tradeCode: result.trade.tradeCode,
+            buyerUserId: result.trade.buyerUserId,
+            sellerUserId: result.trade.sellerUserId
           }
         });
 
         return {
           ok: true,
-          trade
+          trade: result.trade
         };
       } catch (error) {
         return status(400, { error: (error as Error).message });

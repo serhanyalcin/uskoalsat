@@ -8,6 +8,8 @@ import { authRoutes } from "./modules/auth/routes";
 import { healthRoutes } from "./modules/health/routes";
 import { marketRoutes } from "./modules/market/routes";
 import { moderationRoutes } from "./modules/moderation/routes";
+import { notificationRoutes } from "./modules/notification/routes";
+import { priceRoutes } from "./modules/price/routes";
 import { tradeRoutes } from "./modules/trade/routes";
 
 await mkdir(env.UPLOAD_DIR, { recursive: true });
@@ -31,6 +33,8 @@ const app = new Elysia()
   .use(authRoutes)
   .use(marketRoutes)
   .use(moderationRoutes)
+  .use(notificationRoutes)
+  .use(priceRoutes)
   .use(tradeRoutes)
   .listen(env.API_PORT);
 

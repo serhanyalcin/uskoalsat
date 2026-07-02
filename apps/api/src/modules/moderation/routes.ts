@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { createNotification } from "../notification/service";
 import { redisPublisher } from "../../realtime/redis";
 import { listDisputes, openDispute, resolveDispute } from "./service";
 
@@ -34,6 +35,14 @@ export const moderationRoutes = new Elysia({ prefix: "/moderation" })
             status: dispute.status,
             createdAt: dispute.createdAt
           }
+        });
+
+        await createNotification({
+          userId: body.reportedUserId,
+          kind: "dispute_opened",
+          title: "Hakkinda uyusmazlik baslatildi",
+          body: `Trade ${body.tradeCode} icin bir dispute olusturuldu.`,
+          metadata: { disputeId: dispute.id, tradeCode: body.tradeCode }
         });
 
         return { ok: true, dispute };
@@ -87,6 +96,18 @@ export const moderationRoutes = new Elysia({ prefix: "/moderation" })
             resolvedAt: result.dispute.resolvedAt
           }
         });
+
+        if (result.strikeApplied && body.strikeUserId) {
+          await createNotification({
+            userId: body.strikeUserId,
+            kind: "strike_received",
+            title: "Hesabina strike uygulandi",
+            body: result.banned
+              ? "2 strike sinirina ulastigin icin hesabin kalici olarak banlandi."
+              : "Dispute sonucu hesabina 1 strike uygulandi.",
+            metadata: { disputeId: result.dispute.id, banned: result.banned }
+          });
+        }
 
         return { ok: true, ...result };
       } catch (error) {

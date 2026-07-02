@@ -6,6 +6,8 @@ export const listingStatusEnum = pgEnum("listing_status", ["active", "sold", "pa
 export const tradeStatusEnum = pgEnum("trade_status", ["pending", "in_progress", "completed", "disputed", "cancelled"]);
 export const tradeReasonEnum = pgEnum("trade_reason", ["auction_end", "buy_now"]);
 export const disputeStatusEnum = pgEnum("dispute_status", ["open", "resolved", "rejected"]);
+export const notificationKindEnum = pgEnum("notification_kind", ["bid_received", "auction_extended", "trade_matched", "trade_status_changed", "dispute_opened", "strike_received"]);
+export const priceEventTypeEnum = pgEnum("price_event_type", ["bid", "sale"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -100,6 +102,38 @@ export const strikes = pgTable("strikes", {
 }, (table) => ({
   userIdx: index("strikes_user_idx").on(table.userId),
   disputeIdx: index("strikes_dispute_idx").on(table.disputeId)
+}));
+
+export const notifications = pgTable("notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  kind: notificationKindEnum("kind").notNull(),
+  title: varchar("title", { length: 120 }).notNull(),
+  body: text("body").notNull(),
+  metadata: text("metadata").notNull().default("{}"),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  readAt: timestamp("read_at", { withTimezone: true })
+}, (table) => ({
+  userIdx: index("notifications_user_idx").on(table.userId, table.createdAt),
+  unreadIdx: index("notifications_unread_idx").on(table.userId, table.isRead)
+}));
+
+export const priceHistoryEvents = pgTable("price_history_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  listingId: uuid("listing_id").references(() => listings.id, { onDelete: "set null" }),
+  bidId: uuid("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  tradeId: uuid("trade_id").references(() => trades.id, { onDelete: "set null" }),
+  itemName: varchar("item_name", { length: 100 }).notNull(),
+  itemType: varchar("item_type", { length: 50 }).notNull(),
+  serverName: varchar("server_name", { length: 50 }).notNull(),
+  camp: integer("camp").notNull(),
+  eventType: priceEventTypeEnum("event_type").notNull(),
+  amountGb: integer("amount_gb").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  itemIdx: index("price_history_item_idx").on(table.itemName, table.serverName, table.camp, table.createdAt),
+  typeIdx: index("price_history_type_idx").on(table.eventType, table.createdAt)
 }));
 
 export const authSessions = pgTable("auth_sessions", {

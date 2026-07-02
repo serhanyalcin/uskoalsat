@@ -1,4 +1,6 @@
 import { Elysia, t } from "elysia";
+import { createNotification } from "../notification/service";
+import { recordPriceHistoryEvent } from "../price/service";
 import { redisPublisher } from "../../realtime/redis";
 import { createTradeMatch, getTradeRoomByCode, updateTradeStatus } from "./service";
 
@@ -17,7 +19,7 @@ export const tradeRoutes = new Elysia({ prefix: "/trade" })
     "/matches",
     async ({ body, request, status }) => {
       try {
-        const trade = await createTradeMatch({
+        const result = await createTradeMatch({
           listingId: body.listingId,
           buyerUserId: body.buyerUserId,
           reason: body.reason,
@@ -26,21 +28,48 @@ export const tradeRoutes = new Elysia({ prefix: "/trade" })
           ipAddress: getIp(request)
         });
 
+        await recordPriceHistoryEvent({
+          listingId: result.trade.listingId,
+          tradeId: result.trade.id,
+          itemName: result.itemName,
+          itemType: result.itemType,
+          serverName: result.trade.serverName,
+          camp: result.trade.camp,
+          eventType: "sale",
+          amountGb: result.settlementAmountGb
+        });
+
+        await createNotification({
+          userId: result.trade.sellerUserId,
+          kind: "trade_matched",
+          title: "Trade eslesmesi olustu",
+          body: `${result.itemName} icin yeni trade odasi olustu: ${result.trade.tradeCode}`,
+          metadata: { tradeCode: result.trade.tradeCode, listingId: result.trade.listingId }
+        });
+
+        await createNotification({
+          userId: result.trade.buyerUserId,
+          kind: "trade_matched",
+          title: "Trade odan hazir",
+          body: `${result.itemName} icin trade odasi hazir: ${result.trade.tradeCode}`,
+          metadata: { tradeCode: result.trade.tradeCode, listingId: result.trade.listingId }
+        });
+
         await publishTradeEvent({
           kind: "trade.match.created",
           payload: {
-            tradeCode: trade.tradeCode,
-            listingId: trade.listingId,
-            status: trade.status,
-            reason: trade.reason,
-            serverName: trade.serverName,
-            camp: trade.camp
+            tradeCode: result.trade.tradeCode,
+            listingId: result.trade.listingId,
+            status: result.trade.status,
+            reason: result.trade.reason,
+            serverName: result.trade.serverName,
+            camp: result.trade.camp
           }
         });
 
         return {
           ok: true,
-          trade
+          trade: result.trade
         };
       } catch (error) {
         return status(400, { error: (error as Error).message });
@@ -92,6 +121,15 @@ export const tradeRoutes = new Elysia({ prefix: "/trade" })
             status: trade.status,
             updatedAt: trade.updatedAt
           }
+        });
+
+        const recipientUserId = trade.buyerUserId === body.actorUserId ? trade.sellerUserId : trade.buyerUserId;
+        await createNotification({
+          userId: recipientUserId,
+          kind: "trade_status_changed",
+          title: "Trade durumu guncellendi",
+          body: `${trade.tradeCode} kodlu trade durumu ${trade.status} olarak guncellendi.`,
+          metadata: { tradeCode: trade.tradeCode, status: trade.status }
         });
 
         return {

@@ -24,7 +24,12 @@ async function createUniqueTradeCode(): Promise<string> {
   throw new Error("Trade kodu uretilemedi, tekrar deneyin");
 }
 
-export async function createTradeMatch(input: MatchInput): Promise<typeof trades.$inferSelect> {
+export async function createTradeMatch(input: MatchInput): Promise<{
+  trade: typeof trades.$inferSelect;
+  settlementAmountGb: number;
+  itemName: string;
+  itemType: string;
+}> {
   return db.transaction(async (tx) => {
     const [listing] = await tx.select().from(listings).where(eq(listings.id, input.listingId)).limit(1);
 
@@ -34,11 +39,17 @@ export async function createTradeMatch(input: MatchInput): Promise<typeof trades
 
     const [existingTrade] = await tx.select().from(trades).where(eq(trades.listingId, listing.id)).limit(1);
     if (existingTrade) {
-      return existingTrade;
+      return {
+        trade: existingTrade,
+        settlementAmountGb: listing.buyNowGb ?? listing.currentBidGb ?? 0,
+        itemName: listing.itemName,
+        itemType: listing.itemType
+      };
     }
 
     let buyerUserId = input.buyerUserId;
     let winningBidId: string | undefined;
+    let settlementAmountGb = listing.buyNowGb ?? listing.currentBidGb ?? 0;
 
     if (input.reason === "auction_end") {
       const [winnerBid] = await tx
@@ -54,6 +65,7 @@ export async function createTradeMatch(input: MatchInput): Promise<typeof trades
 
       buyerUserId = winnerBid.bidderUserId;
       winningBidId = winnerBid.id;
+      settlementAmountGb = winnerBid.amountGb;
     }
 
     if (!buyerUserId) {
@@ -99,7 +111,12 @@ export async function createTradeMatch(input: MatchInput): Promise<typeof trades
       ipAddress: input.ipAddress
     });
 
-    return created;
+    return {
+      trade: created,
+      settlementAmountGb,
+      itemName: listing.itemName,
+      itemType: listing.itemType
+    };
   });
 }
 

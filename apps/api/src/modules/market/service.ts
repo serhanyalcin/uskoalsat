@@ -102,6 +102,11 @@ export async function createBid(input: { listingId: string; bidderUserId: string
   amountGb: number;
   bidId: string;
   bidderUserId: string;
+  sellerUserId: string;
+  itemName: string;
+  itemType: string;
+  serverName: string;
+  camp: number;
   minRequiredBidGb: number;
   extendedTo?: string;
 }> {
@@ -178,6 +183,11 @@ export async function createBid(input: { listingId: string; bidderUserId: string
       amountGb: input.amountGb,
       bidId: bid.id,
       bidderUserId: input.bidderUserId,
+      sellerUserId: listing.sellerUserId,
+      itemName: listing.itemName,
+      itemType: listing.itemType,
+      serverName: listing.serverName,
+      camp: listing.camp,
       minRequiredBidGb,
       extendedTo: antiSnipeExtendedTo?.toISOString()
     };

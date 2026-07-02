@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:api": "bun run --cwd apps/api dev",
+    "dev:api": "bun --env-file=.env run --cwd apps/api dev",
     "dev:web": "bun run --cwd apps/web dev",
     "build:shared": "bun run --cwd packages/shared build",
     "build:api": "bun run --cwd apps/api build",

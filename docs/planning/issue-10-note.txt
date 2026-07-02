@@ -1,0 +1,1 @@
+Client visual artifact placeholder for Issue #10.

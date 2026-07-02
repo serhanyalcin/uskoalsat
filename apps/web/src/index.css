@@ -10,6 +10,7 @@
   --accent: #23d5ab;
   --text-primary: #f3f6ff;
   --text-secondary: #99a6c0;
+  --danger: #ff7b7b;
 }
 
 * {
@@ -24,9 +25,19 @@ body {
   color: var(--text-primary);
 }
 
+#root {
+  min-height: 100vh;
+}
+
 .card {
   border: 1px solid var(--line);
   border-radius: 1rem;
   background: linear-gradient(180deg, rgba(21, 30, 46, 0.95), rgba(15, 21, 34, 0.9));
   backdrop-filter: blur(4px);
+}
+
+button,
+input,
+select {
+  font: inherit;
 }
